@@ -104,6 +104,7 @@ textarea,select,input[type=number]{background:#17110e;border:1px solid #4a372b;b
     <button class="btn mt-2" id="ab">Before / After</button> <span class="text-xs text-stone-500">(export always uses the polished sound)</span>
     <hr class="border-[#3a2c24] my-4">
     <div class="flex gap-2"><button class="btn" id="dnaOut">⬇ Export Style DNA</button><label class="btn">⬆ Import Style DNA<input id="dnaIn" type="file" accept=".json" hidden></label></div>
+    <label class="lbl">Export quality</label><select id="res"><option value="2" selected>4K — 2160×3840 (45 Mbps)</option><option value="1">HD — 1080×1920 (14 Mbps)</option></select>
     <button class="cta mt-4" id="export">🎬 Render &amp; Download Reel</button>
     <button class="btn w-full mt-2" id="cover">🖼 Export Grid Cover (.jpg)</button>
     <div class="h-2 bg-[#17110e] rounded mt-2 overflow-hidden"><div id="bar" class="h-2 bg-amber-500" style="width:0"></div></div>
@@ -138,7 +139,7 @@ const PRESETS={'Kodak Portra Warm':{warmth:.45,contrast:1.05,sat:1.08,vig:.35,gr
  'Western AF':{warmth:.4,contrast:1.06,sat:.85,vig:.3,grain:.2,hal:.25,fade:.12},
  'Western AF B&W':{warmth:0,contrast:1.18,sat:0,vig:.55,grain:.45,hal:.2,fade:.1},
  'Raw':{warmth:0,contrast:1,sat:1,vig:0,grain:0}};
-let cuts=[], seed=7, cues=[], tap=-1, exporting=false, pulse=0, pt=0, avg=0;
+let cuts=[], seed=7, cues=[], tap=-1, exporting=false, pulse=0, pt=0, avg=0, SC=1;
 
 /* ---------- helpers ---------- */
 const get=(p)=>p.split('.').reduce((o,k)=>o[k],S);
@@ -309,7 +310,7 @@ function halation(a){ hc.save(); if('filter' in hc) hc.filter='brightness(.75) c
   hc.globalCompositeOperation='multiply'; hc.fillStyle='rgb(255,150,50)'; hc.fillRect(0,0,216,384); hc.globalCompositeOperation='source-over';
   cx.save(); cx.globalCompositeOperation='screen'; cx.globalAlpha=a; cx.imageSmoothingQuality='high'; cx.drawImage(hb,0,0,W,H); cx.restore() }
 /* ---------- render loop ---------- */
-function frame(){ requestAnimationFrame(frame);
+function frame(){ requestAnimationFrame(frame); cx.setTransform(SC,0,0,SC,0,0); cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality='high';
   if(!V.videoWidth){ cx.fillStyle='#120d0a'; cx.fillRect(0,0,W,H); cx.fillStyle='#8a735f'; cx.font='600 44px "Plus Jakarta Sans",sans-serif'; cx.textAlign='center'; cx.fillText('Import a video to begin',W/2,H/2); return }
   if(!exporting && !V.paused && V.currentTime>=S.end) V.currentTime=S.start;
   const rel=clamp(V.currentTime-S.start,0,S.end-S.start), cut=cuts.find(c=>rel>=c.a&&rel<c.b)||cuts[cuts.length-1]||{a:0,b:1,s:'wide'};
@@ -340,20 +341,22 @@ $('#dnaIn').onchange=async e=>{ try{ const j=JSON.parse(await e.target.files[0].
   for(const k in j.shots||{}) Object.assign(S.shots[k],j.shots[k]); Object.assign(S.g,j.g||{}); syncUI() }catch{ alert('Not a valid Style DNA file.') } };
 function dl(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000) }
 
+/* ---------- resolution scaling (canvas stays 1080x1920 logically; physical size = x SC) ---------- */
+async function setScale(n){ SC=n; cv.width=W*n; cv.height=H*n; await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))) }
 /* ---------- export ---------- */
-$('#export').onclick=async()=>{ if(!V.src||exporting) return; await audio(); S.bypass=false; applyAudio(); exporting=true; spk.gain.value=0; V.pause();
+$('#export').onclick=async()=>{ if(!V.src||exporting) return; await audio(); S.bypass=false; applyAudio(); exporting=true; spk.gain.value=0; V.pause(); const res=+$('#res').value; await setScale(res);
   if(Math.abs(V.currentTime-S.start)>.02){ V.currentTime=S.start; await new Promise(r=>{V.onseeked=()=>{V.onseeked=null;r()};setTimeout(r,800)}) }
-  const mime=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+  const mime=[...(res>1?['video/mp4;codecs=avc1.640033,mp4a.40.2','video/webm;codecs=vp9,opus']:[]),'video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
   const stream=new MediaStream([...cv.captureStream(30).getVideoTracks(),...dest.stream.getAudioTracks()]);
-  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6}), chunks=[];
-  rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-  rec.onstop=()=>{ const ext=rec.mimeType.includes('mp4')?'mp4':'webm'; dl(new Blob(chunks,{type:rec.mimeType}),`reel.${ext}`);
-    exporting=false; spk.gain.value=1; $('#bar').style.width='0'; $('#exInfo').textContent=`Done — saved reel.${ext}`; V.currentTime=S.start };
+  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:res>1?45e6:14e6,audioBitsPerSecond:256e3}), chunks=[];
+  rec.ondataavailable=e=>e.data.size&&chunks.push(e.data); rec.onerror=()=>alert('This browser could not record at this size — try the HD option.');
+  rec.onstop=()=>{ const ext=rec.mimeType.includes('mp4')?'mp4':'webm'; dl(new Blob(chunks,{type:rec.mimeType}),`reel-${res>1?'4k':'1080p'}.${ext}`);
+    exporting=false; spk.gain.value=1; setScale(1); $('#bar').style.width='0'; $('#exInfo').textContent=`Done — saved reel-${res>1?'4k':'1080p'}.${ext}`; V.currentTime=S.start };
   rec.start(250); $('#exInfo').textContent='Rendering in real time…'; await V.play();
   const iv=setInterval(()=>{ const p=(V.currentTime-S.start)/(S.end-S.start); $('#bar').style.width=clamp(p*100,0,100)+'%';
     if(V.currentTime>=S.end-.03||V.ended){ clearInterval(iv); V.pause(); rec.stop() } },100) };
 
-$('#cover').onclick=async()=>{ if(!V.videoWidth) return; skipLy=true; await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  cv.toBlob(b=>{ dl(b,'cover-1080x1920.jpg'); skipLy=false },'image/jpeg',.95) };
+$('#cover').onclick=async()=>{ if(!V.videoWidth) return; skipLy=true; await setScale(+$('#res').value);
+  cv.toBlob(b=>{ dl(b,`cover-${cv.width}x${cv.height}.jpg`); skipLy=false; setScale(1) },'image/jpeg',.95) };
 syncUI();
 </script></body></html>
