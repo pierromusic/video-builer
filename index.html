@@ -73,13 +73,14 @@ textarea,select,input[type=number]{background:#17110e;border:1px solid #4a372b;b
     <div id="srcwrap" class="relative mt-4 select-none"><canvas id="src" class="w-full rounded-lg bg-black"></canvas></div>
     <label class="lbl">Face punch-in <b id="fzv"></b>×</label><input type="range" data-k="shots.face.z" min="1" max="3" step="0.05">
     <label class="lbl">Guitar punch-in <b id="gzv"></b>×</label><input type="range" data-k="shots.guitar.z" min="1" max="3" step="0.05">
+    <label class="lbl">Right-hand punch-in <b id="rzv"></b>×</label><input type="range" data-k="shots.rh.z" min="1" max="3" step="0.05">
   </div>
 
   <div class="card tabp hidden" id="tab3">
     <div class="flex flex-wrap gap-2" id="presets"></div>
     <label class="lbl">Warmth</label><input type="range" data-k="g.warmth" min="0" max="1" step="0.01">
     <label class="lbl">Contrast</label><input type="range" data-k="g.contrast" min="0.7" max="1.4" step="0.01">
-    <label class="lbl">Saturation</label><input type="range" data-k="g.sat" min="0.4" max="1.6" step="0.01">
+    <label class="lbl">Saturation</label><input type="range" data-k="g.sat" min="0" max="1.6" step="0.01">
     <label class="lbl">Vignette</label><input type="range" data-k="g.vig" min="0" max="0.9" step="0.01">
     <label class="lbl">35mm film grain</label><input type="range" data-k="g.grain" min="0" max="0.8" step="0.01">
     <label class="lbl">Warm halation (amber bloom on highlights)</label><input type="range" data-k="g.hal" min="0" max="1" step="0.01">
@@ -118,8 +119,8 @@ textarea,select,input[type=number]{background:#17110e;border:1px solid #4a372b;b
    <div style="position:absolute;right:0;top:46%;bottom:22%;width:16%;background:#ef444455;padding:3px">Like · comment · share</div></div></div>
   <div class="flex items-center justify-center gap-3 mt-3"><button class="btn" id="play">▶ Play</button><span id="tm" class="text-xs text-stone-400">0.0 / 0.0s</span><label class="text-xs text-stone-400"><input type="checkbox" data-k="safe"> Safe zones</label></div>
 <div class="mt-3 card" style="padding:10px"><canvas id="tl" width="720" height="64" class="w-full rounded bg-[#17110e] cursor-pointer touch-none" style="height:64px"></canvas>
-  <div class="flex flex-wrap gap-1 mt-2"><button class="btn" id="tcut">✂ Cut (C)</button><button class="btn" data-shot="wide">Wide (1)</button><button class="btn" data-shot="face">Face (2)</button><button class="btn" data-shot="guitar">Guitar (3)</button><button class="btn" id="tdel">🗑 Remove</button><button class="btn" id="tauto">↺ Auto</button></div>
-  <p class="text-xs text-stone-500 mt-1">Click the strip to move the cursor. While playing, tap 1 / 2 / 3 to switch camera live, C to cut, Delete to remove a cut, ←/→ to nudge (Shift = 1s).</p></div>
+  <div class="flex flex-wrap gap-1 mt-2"><button class="btn" id="tcut">✂ Cut (C)</button><button class="btn" data-shot="wide">Wide (1)</button><button class="btn" data-shot="face">Face (2)</button><button class="btn" data-shot="guitar">Guitar (3)</button><button class="btn" data-shot="rh">Right Hand (4)</button><button class="btn" id="tdel">🗑 Remove</button><button class="btn" id="tauto">↺ Auto</button></div>
+  <p class="text-xs text-stone-500 mt-1">Click the strip to move the cursor. While playing, tap 1 / 2 / 3 / 4 to switch camera live, C to cut, Delete to remove a cut, ←/→ to nudge (Shift = 1s).</p></div>
 </div></aside>
 </main>
 
@@ -128,12 +129,14 @@ const $=s=>document.querySelector(s), W=1080, H=1920;
 const V=document.createElement('video'); V.playsInline=true; V.preload='auto';
 const cv=$('#cv'), cx=cv.getContext('2d'), sc=$('#src'), sx=sc.getContext('2d');
 const S={autoPick:true,polish:true,bypass:false,snap:true,hand:false,safe:false,glide:true,start:0,end:15,pace:'balanced',kb:8,pulse:true,
-  shots:{wide:{x:.5,y:.5,z:1},face:{x:.5,y:.3,z:1.45},guitar:{x:.55,y:.7,z:1.65}},
+  shots:{wide:{x:.5,y:.5,z:1},face:{x:.5,y:.3,z:1.45},guitar:{x:.55,y:.7,z:1.65},rh:{x:.42,y:.74,z:1.9}},
   g:{warmth:.45,contrast:1.05,sat:1.08,vig:.35,grain:.25,hal:.2,fade:0},font:'Playfair Display',size:64,pos:66};
 const PRESETS={'Kodak Portra Warm':{warmth:.45,contrast:1.05,sat:1.08,vig:.35,grain:.25},
  'Golden Hour Studio':{warmth:.75,contrast:1.1,sat:1.2,vig:.45,grain:.15},
  'Analog Tape':{warmth:.35,contrast:.94,sat:.8,vig:.6,grain:.55},
  'Grey Orange':{warmth:.65,contrast:1.12,sat:.55,vig:.4,grain:.2,hal:.3,fade:.3},
+ 'Western AF':{warmth:.4,contrast:1.06,sat:.85,vig:.3,grain:.2,hal:.25,fade:.12},
+ 'Western AF B&W':{warmth:0,contrast:1.18,sat:0,vig:.55,grain:.45,hal:.2,fade:.1},
  'Raw':{warmth:0,contrast:1,sat:1,vig:0,grain:0}};
 let cuts=[], seed=7, cues=[], tap=-1, exporting=false, pulse=0, pt=0, avg=0;
 
@@ -152,13 +155,13 @@ document.querySelectorAll('[data-k]').forEach(el=>el.addEventListener('input',()
 function syncUI(){document.querySelectorAll('[data-k]').forEach(el=>{const v=get(el.dataset.k); el.type==='checkbox'?el.checked=v:el.value=v});
   document.querySelectorAll('#pace .btn').forEach(b=>b.classList.toggle('on',b.dataset.pace===S.pace));
   buildCuts(); updateRets(); labels(); document.fonts.load(`600 40px "${S.font}"`)}
-function labels(){$('#safeov').style.display=S.safe?'block':'none'; applyAudio(); $('#kbv').textContent=S.kb;$('#fzv').textContent=S.shots.face.z.toFixed(2);$('#gzv').textContent=S.shots.guitar.z.toFixed(2)}
+function labels(){$('#safeov').style.display=S.safe?'block':'none'; applyAudio(); $('#kbv').textContent=S.kb;$('#fzv').textContent=S.shots.face.z.toFixed(2);$('#gzv').textContent=S.shots.guitar.z.toFixed(2);$('#rzv').textContent=S.shots.rh.z.toFixed(2)}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
   document.querySelectorAll('.tabp').forEach(p=>p.classList.toggle('hidden',p.id!=='tab'+t.dataset.tab));
   if(t.dataset.tab==='2') updateRets()});
 const pr=$('#presets'); Object.keys(PRESETS).forEach(n=>{const b=document.createElement('button');b.className='btn';b.textContent=n;
-  b.onclick=()=>{Object.assign(S.g,{hal:{'Kodak Portra Warm':.2,'Golden Hour Studio':.5,'Analog Tape':.35}[n]||0,fade:0},PRESETS[n]);syncUI()};pr.append(b)});
+  b.onclick=()=>{Object.assign(S.g,{hal:{'Kodak Portra Warm':.2,'Golden Hour Studio':.5,'Analog Tape':.35}[n]||0,fade:0},PRESETS[n]);S.hand=S.hand||n.startsWith('Western');syncUI()};pr.append(b)});
 document.querySelectorAll('#pace .btn').forEach(b=>b.onclick=()=>{S.pace=b.dataset.pace;manual=false;syncUI()});
 $('#reshuffle').onclick=()=>{seed+=1;manual=false;buildCuts()};
 
@@ -226,7 +229,7 @@ $('#play').onclick=playPause; V.onplay=()=>$('#play').textContent='❚❚ Pause'
 /* ---------- smart cuts ---------- */
 function buildCuts(){ const d=S.end-S.start; if(manual&&cuts.length){ cuts=cuts.filter(c=>c.a<d-.3); if(cuts.length){ cuts[cuts.length-1].b=d; return } manual=false }
   const p={chill:5.5,balanced:3.5,dynamic:2.2}[S.pace], r=rng(seed*977+13);
-  const seq=['wide','face','guitar','wide','guitar','face']; cuts=[]; let t=0,i=0;
+  const seq=['wide','face','guitar','rh','wide','rh','face','guitar']; cuts=[]; let t=0,i=0;
   while(t<d){ let l=Math.max(1.2,p*(.8+r()*.4)); if(d-t-l<.9) l=d-t; cuts.push({a:t,b:t+l,s:seq[i++%seq.length]}); t+=l }
   if(S.snap&&onsets.length) for(let i=1;i<cuts.length;i++){ const b=S.start+cuts[i].a, o=onsets.reduce((m,x)=>Math.abs(x-b)<Math.abs(m-b)?x:m,-99)-S.start;
     if(Math.abs(o-cuts[i].a)<=.7&&o-cuts[i-1].a>=1&&cuts[i].b-o>=1){cuts[i-1].b=cuts[i].a=o} } }
@@ -240,9 +243,9 @@ function cropRect(shot,k=0,extra=0,dr=0){ const vw=V.videoWidth, vh=V.videoHeigh
   return [clamp(shot.x*vw-w/2+dx,0,vw-w), clamp(shot.y*vh-h/2+dy,0,vh-h), w, h] }
 
 /* ---------- reticles (crop frames over source view) ---------- */
-const COL={wide:'#fde68a',face:'#fb923c',guitar:'#f43f5e'}, rets={};
+const COL={wide:'#fde68a',face:'#fb923c',guitar:'#f43f5e',rh:'#38bdf8'}, rets={};
 for(const k in COL){ const d=document.createElement('div'); d.className='ret'; d.style.color=d.style.borderColor=COL[k];
-  d.innerHTML=`<span>${k==='wide'?'Wide':k==='face'?'Face Focus':'Guitar Focus'}</span>`; $('#srcwrap').append(d); rets[k]=d;
+  d.innerHTML=`<span>${({wide:'Wide',face:'Face Focus',guitar:'Guitar Focus',rh:'Right Hand'})[k]}</span>`; $('#srcwrap').append(d); rets[k]=d;
   d.onpointerdown=e=>{d.setPointerCapture(e.pointerId);d.dataset.drag=1;e.preventDefault()};
   d.onpointerup=()=>d.dataset.drag='';
   d.onpointermove=e=>{ if(!d.dataset.drag) return; const r=sc.getBoundingClientRect();
@@ -280,20 +283,20 @@ function drawLyrics(rel){ if(skipLy) return; const ts=cues.filter(c=>c.t!=null).
     cx.shadowColor='rgba(0,0,0,.85)'; cx.shadowBlur=10; cx.shadowOffsetY=3; cx.fillText(s,W/2,y0+i*lh)}); cx.restore() }
 
 /* ---------- manual cut timeline + playhead ---------- */
-let manual=false; const SH=['wide','face','guitar'], tl=$('#tl'); let sd=false;
+let manual=false; const SH=['wide','face','guitar','rh'], tl=$('#tl'); let sd=false;
 function curIdx(){ const r=V.currentTime-S.start, i=cuts.findIndex(c=>r>=c.a&&r<c.b); return i<0?cuts.length-1:i }
 function cutHere(shot){ if(!cuts.length||!V.src) return; const r=V.currentTime-S.start, i=curIdx(), c=cuts[i];
   if(shot&&shot===c.s) return;
   if(r-c.a<.3){ if(shot){ c.s=shot; manual=true } return }
   if(c.b-r<.3) return;
-  cuts.splice(i+1,0,{a:r,b:c.b,s:shot||SH[(SH.indexOf(c.s)+1)%3]}); c.b=r; manual=true }
+  cuts.splice(i+1,0,{a:r,b:c.b,s:shot||SH[(SH.indexOf(c.s)+1)%SH.length]}); c.b=r; manual=true }
 function delCut(){ const i=curIdx(); if(i<1) return; cuts[i-1].b=cuts[i].b; cuts.splice(i,1); manual=true }
 $('#tcut').onclick=()=>cutHere(); $('#tdel').onclick=delCut; $('#tauto').onclick=()=>{manual=false;buildCuts()};
 document.querySelectorAll('[data-shot]').forEach(b=>b.onclick=()=>cutHere(b.dataset.shot));
 const seekTL=e=>{ const r=tl.getBoundingClientRect(); V.currentTime=S.start+clamp((e.clientX-r.left)/r.width,0,1)*(S.end-S.start) };
 tl.onpointerdown=e=>{ sd=true; tl.setPointerCapture(e.pointerId); seekTL(e) }; tl.onpointermove=e=>{ if(sd) seekTL(e) }; tl.onpointerup=()=>sd=false;
 addEventListener('keydown',e=>{ const t=e.target; if(/TEXTAREA|SELECT/.test(t.tagName)||(t.tagName==='INPUT'&&/text|number/.test(t.type))) return; const k=e.key.toLowerCase();
-  if(k==='c') cutHere(); else if(k==='1') cutHere('wide'); else if(k==='2') cutHere('face'); else if(k==='3') cutHere('guitar');
+  if(k==='c') cutHere(); else if(k==='1') cutHere('wide'); else if(k==='2') cutHere('face'); else if(k==='3') cutHere('guitar'); else if(k==='4') cutHere('rh');
   else if(k==='delete'||k==='backspace') delCut();
   else if((k==='arrowleft'||k==='arrowright')&&t.type!=='range'){ e.preventDefault(); V.currentTime=clamp(V.currentTime+(k==='arrowleft'?-1:1)*(e.shiftKey?1:.1),S.start,S.end) } });
 function drawTL(rel){ const x=tl.getContext('2d'), w=tl.width, h=tl.height, d=S.end-S.start; x.clearRect(0,0,w,h); if(!(d>0)) return;
